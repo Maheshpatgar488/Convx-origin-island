@@ -64,6 +64,9 @@ jobs:
             sed -i -E "s/applicationId(\s*=\s*|\s+).*.\"/applicationId = \"$TARGET_ID\"/" "$file" 2>/dev/null || true
             sed -i -E "s/applicationId\s+\".*\"/applicationId \"$TARGET_ID\"/" "$file" 2>/dev/null || true
           done
+          # Neutralize built-in updater so it never shows update popups
+          find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i 's|api.github.com/repos/cosmictaserdev-creator/Convx|127.0.0.1|g' {} +
+
           echo "Verified applicationId replacement:"
           grep -rn "applicationId" app/ || true
 
