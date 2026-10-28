@@ -70,24 +70,36 @@ jobs:
           # Update launcher shortcuts targetPackage
           sed -i -E "s/android:targetPackage=\"[^\"]*\"/android:targetPackage=\"$TARGET_ID\"/g" app/src/main/res/xml/shortcuts.xml 2>/dev/null || true
 
+          # Fix JVM memory & code cache issues in gradle.properties
+          sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096M -XX:ReservedCodeCacheSize=512M -Dfile.encoding=UTF-8/' gradle.properties
+          sed -i '/kotlin.compiler.execution.strategy/d' gradle.properties
+          sed -i '/org.gradle.workers.max/d' gradle.properties
+
           # Neutralize built-in updater so it never shows update popups pointing to upstream
           find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i 's|api.github.com/repos/cosmictaserdev-creator/Convx|127.0.0.1|g' {} +
 
+          echo "Verified gradle.properties:"
+          grep "jvmargs" gradle.properties || true
           echo "Verified applicationId replacement:"
           grep -rn "applicationId" app/ || true
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: 'zulu'
           java-version: '21'
-          cache: 'gradle'
+          distribution: 'temurin'
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
       - name: Build APK
-        run: ./gradlew assembleArm64GmsRelease -x lint -x lintVitalArm64GmsRelease
+        run: |
+          ./gradlew assembleUniversalGmsRelease -Pnightly=true -PnightlyRun=${{ github.run_number }} --no-configuration-cache --console=plain --warning-mode summary -x lint
 
       - name: Download Uber APK Signer
         run: |
@@ -116,6 +128,7 @@ jobs:
           name: Convx ${{ needs.check.outputs.tag }} (Origin Island Edition)
           draft: false
           prerelease: false
+          make_latest: true
           files: signed_apks/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
