@@ -83,9 +83,6 @@ jobs:
           java-version: '21'
           cache: 'gradle'
 
-      - name: Setup FFTW for Android
-        uses: ./.github/actions/setup-fftw
-
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
