@@ -75,8 +75,9 @@ jobs:
           sed -i '/kotlin.compiler.execution.strategy/d' gradle.properties
           sed -i '/org.gradle.workers.max/d' gradle.properties
 
-          # Neutralize built-in updater so it never shows update popups pointing to upstream
-          find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i 's|api.github.com/repos/cosmictaserdev-creator/Convx|127.0.0.1|g' {} +
+          # Redirect built-in updater, changelog, and links to this fork repository
+          find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i "s|cosmictaserdev-creator/Convx|\${{ github.repository }}|g" {} +
+          find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i "s|workflows/nightly.yml|workflows/build.yml|g" {} +
 
           echo "Verified gradle.properties:"
           grep "jvmargs" gradle.properties || true
