@@ -10,7 +10,7 @@ on:
         description: 'Force build even if version is up to date'
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -28,17 +28,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           UPSTREAM_TAG=$(gh api repos/cosmictaserdev-creator/Convx/releases --jq '.[0].tag_name')
-          MY_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name || echo "none")
+          UPSTREAM_ASSET_TIME=$(gh api repos/cosmictaserdev-creator/Convx/releases --jq '.[0].assets[0].updated_at' || echo "")
+          MY_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name 2>/dev/null || echo "none")
+          MY_ASSET_TIME=$(gh api repos/${{ github.repository }}/releases/tags/$UPSTREAM_TAG --jq '.assets[0].updated_at' 2>/dev/null || echo "none")
 
-          echo "Upstream latest tag: $UPSTREAM_TAG"
-          echo "Fork latest tag: $MY_TAG"
+          echo "Upstream latest tag: $UPSTREAM_TAG (asset updated: $UPSTREAM_ASSET_TIME)"
+          echo "Fork latest tag: $MY_TAG (asset updated: $MY_ASSET_TIME)"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_build }}" = "true" ]; then
-            echo "Manual trigger with force build enabled."
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger -> force build enabled."
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
-          elif [ "$UPSTREAM_TAG" != "$MY_TAG" ]; then
-            echo "New version detected ($UPSTREAM_TAG != $MY_TAG)."
+          elif [ "$UPSTREAM_TAG" != "$MY_TAG" ] || [ "$UPSTREAM_ASSET_TIME" != "$MY_ASSET_TIME" ] || [ "$MY_ASSET_TIME" = "none" ]; then
+            echo "New upstream release/build detected ($UPSTREAM_TAG)."
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "tag=$UPSTREAM_TAG" >> "$GITHUB_OUTPUT"
           else
@@ -56,15 +58,19 @@ jobs:
         with:
           repository: cosmictaserdev-creator/Convx
           ref: ${{ needs.check.outputs.tag }}
+          submodules: recursive
 
-      - name: Rename Package Identifier
+      - name: Rename Package Identifier to Apple Music for OriginOS Island
         run: |
-          TARGET_ID="com.spotify.music"
+          TARGET_ID="com.apple.android.music"
           find . -name "build.gradle.kts" -o -name "build.gradle" | while read -r file; do
             sed -i -E "s/applicationId(\s*=\s*|\s+).*.\"/applicationId = \"$TARGET_ID\"/" "$file" 2>/dev/null || true
             sed -i -E "s/applicationId\s+\".*\"/applicationId \"$TARGET_ID\"/" "$file" 2>/dev/null || true
           done
-          # Neutralize built-in updater so it never shows update popups
+          # Update launcher shortcuts targetPackage
+          sed -i -E "s/android:targetPackage=\"[^\"]*\"/android:targetPackage=\"$TARGET_ID\"/g" app/src/main/res/xml/shortcuts.xml 2>/dev/null || true
+
+          # Neutralize built-in updater so it never shows update popups pointing to upstream
           find . -type f \( -name "*.kt" -o -name "*.java" \) -exec sed -i 's|api.github.com/repos/cosmictaserdev-creator/Convx|127.0.0.1|g' {} +
 
           echo "Verified applicationId replacement:"
@@ -76,6 +82,9 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
           cache: 'gradle'
+
+      - name: Setup FFTW for Android
+        uses: ./.github/actions/setup-fftw
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
@@ -95,14 +104,19 @@ jobs:
             --apks "$RAW_APK" \
             --allowResign \
             --out signed_apks
-          echo "Signed files:"
+          SIGNED_FILE=$(find signed_apks -name "*aligned-debugSigned.apk" | head -n 1)
+          if [ -n "$SIGNED_FILE" ]; then
+            cp "$SIGNED_FILE" "signed_apks/convx-${{ needs.check.outputs.tag }}.apk"
+            cp "$SIGNED_FILE" "signed_apks/convx-origin-island.apk"
+          fi
+          echo "Signed files ready for release:"
           ls -lh signed_apks/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check.outputs.tag }}
-          name: Convx ${{ needs.check.outputs.tag }}
+          name: Convx ${{ needs.check.outputs.tag }} (Origin Island Edition)
           draft: false
           prerelease: false
           files: signed_apks/*.apk
